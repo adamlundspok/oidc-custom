@@ -1,3 +1,41 @@
-<h1>
-  {{title}}
-</h1>
+<app-load-spinner></app-load-spinner>
+
+<div class="container" style="margin-top: 15px;" *ngIf="loginService.securityService.isAuthorized">
+    <!-- Static navbar -->
+    <nav class="navbar navbar-default">
+        <div class="container-fluid">
+            <div class="navbar-header">
+                <button aria-controls="navbar" aria-expanded="false" data-target="#navbar" data-toggle="collapse" class="navbar-toggle collapsed" type="button">
+                    <span class="sr-only">Toggle navigation</span>
+                    <span class="icon-bar"></span>
+                    <span class="icon-bar"></span>
+                    <span class="icon-bar"></span>
+                </button>
+                <!--<a [routerLink]="['/dataeventrecords/list']" class="navbar-brand"><img src="assets/damienbod.jpg" height="40" style="margin-top:-10px;" /></a>-->
+            </div>
+            <div class="navbar-collapse collapse" id="navbar" *ngIf="!loginService.securityService.isAuthorized">
+                <ul class="nav navbar-nav">
+                    <li>You are not logged in</li>
+                    <li><a class="navigationLinkButton" *ngIf="!loginService.securityService.isAuthorized" (click)="login()">Login</a></li>
+                    <li><a class="navigationLinkButton" *ngIf="loginService.securityService.isAuthorized" (click)="getSecuritySettings()">Security Settings</a></li>
+                    <li><a class="navigationLinkButton" *ngIf="loginService.securityService.checkSessionChanged" (click)="refreshSession()">Refresh Session</a></li>
+              
+                </ul>
+            </div><!--/.nav-collapse -->
+
+            <div class="navbar-collapse collapse" id="navbar" *ngIf="loginService.securityService.isAuthorized">
+                <ul class="nav navbar-nav">
+                    <li><a [routerLink]="['/home']">Home</a></li>
+                    <li><a [routerLink]="['/dashboard']">Dashboard</a></li>
+                    <li><a class="navigationLinkButton" *ngIf="loginService.securityService.isAuthorized" (click)="logout()">Logout</a></li>
+                    <li><a class="navigationLinkButton" *ngIf="loginService.securityService.isAuthorized" (click)="getSecuritySettings()">Security Settings</a></li>
+                    <li><a class="navigationLinkButton" *ngIf="loginService.securityService.checkSessionChanged" (click)="refreshSession()">Refresh Session</a></li>
+                </ul>
+            </div><!--/.nav-collapse -->
+
+        </div><!--/.container-fluid -->
+    </nav>
+    <app-auth-debug></app-auth-debug>
+    <router-outlet></router-outlet>
+
+</div>

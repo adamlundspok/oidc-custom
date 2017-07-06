@@ -1,0 +1,7 @@
+<div class="loader-container" *ngIf="!hidden">
+  <div class="loader-message">
+    <div id="loader-message"><h1>{{message}}</h1></div>
+    <ng-content></ng-content>
+    <div class="loader">Loading</div>
+  </div>
+</div>
