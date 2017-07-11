@@ -2,6 +2,7 @@
 import { Http, Response, Headers } from '@angular/http';
 import 'rxjs/add/operator/map';
 import 'rxjs/add/operator/catch';
+import { BehaviorSubject } from 'rxjs/BehaviorSubject';
 import { Observable } from 'rxjs/Rx';
 import { Router } from '@angular/router';
 import { AuthConfiguration, OpenIDImplicitFlowConfiguration } from '../modules/auth.configuration';
@@ -11,13 +12,15 @@ import { OidcSecuritySilentRenew } from './oidc.security.silent-renew';
 import { OidcSecurityUserService } from './oidc.security.user-service';
 import { OidcSecurityCommon } from './oidc.security.common';
 import { AuthWellKnownEndpoints } from './auth.well-known-endpoints';
+import { OIDCUser } from '../oidc.user.model';
 
 import { JwtKeys } from './jwtkeys';
 
 @Injectable()
 export class OidcSecurityService {
 
-    @Output() onUserDataLoaded: EventEmitter<any> = new EventEmitter<any>(true);
+    private oidcUser: OIDCUser = new OIDCUser();
+    @Output() oidcUserShare: BehaviorSubject<OIDCUser> = new BehaviorSubject(this.oidcUser);
 
     checkSessionChanged: boolean;
     isAuthorized: boolean;
@@ -37,10 +40,9 @@ export class OidcSecurityService {
         public oidcSecurityUserService: OidcSecurityUserService,
         public oidcSecurityCommon: OidcSecurityCommon,
         public authWellKnownEndpoints: AuthWellKnownEndpoints
-    ) {
-    }
+    ) {}
 
-    setupModule(openIDImplicitFlowConfiguration: OpenIDImplicitFlowConfiguration) {
+    public setupModule(openIDImplicitFlowConfiguration: OpenIDImplicitFlowConfiguration) {
 
         this.authConfiguration.init(openIDImplicitFlowConfiguration);
         this.oidcSecurityValidation = new OidcSecurityValidation(this.oidcSecurityCommon);
@@ -63,20 +65,26 @@ export class OidcSecurityService {
         this.authWellKnownEndpoints.setupModule();
     }
 
-    getToken(): any {
-        let token = this.oidcSecurityCommon.getAccessToken();
-        return decodeURIComponent(token);
+    public getToken(): any {
+        return decodeURIComponent(this.oidcSecurityCommon.getAccessToken());
     }
 
-    getUserData(): any {
+    public getUserData(): any {
         if (!this.isAuthorized) {
             this.oidcSecurityCommon.logError('User must be logged in before you can get the user data!')
         }
-
         return this.oidcSecurityUserService.userData;
     }
 
-    authorize() {
+    public getAuthenticatedUser(): Observable<OIDCUser> {
+        return this.oidcUserShare.share();
+    }
+
+    public setAuthenticatedUser(oidcuser: OIDCUser) {
+        this.oidcUserShare.next(oidcuser);
+    }
+
+    public authorize(): void {
 
         let data = this.oidcSecurityCommon.retrieve(this.oidcSecurityCommon.storage_well_known_endpoints);
         if (data && data !== '') {
@@ -114,15 +122,15 @@ export class OidcSecurityService {
         this.authWellKnownEndpoints.setupModule();
     }
 
-    authorizedCallback(): Observable<any> {
+    authorizedCallback(): Observable<OIDCUser> {
         this.oidcSecurityCommon.logDebug('BEGIN authorizedCallback, no auth data');
         this.resetAuthorizationData();
         const __self = this;
 
-        let hash = window.location.hash.substr(1);
+        const hash = window.location.hash.substr(1);
 
-        let result: any = hash.split('&').reduce(function (result: any, item: string) {
-            let parts = item.split('=');
+        const result: any = hash.split('&').reduce(function (result: any, item: string) {
+            const parts = item.split('=');
             result[parts[0]] = parts[1];
             return result;
         }, {});
@@ -135,18 +143,33 @@ export class OidcSecurityService {
         let authResponseIsValid = false;
         let decoded_id_token: any;
 
-        let signInKeys = this.getSigningKeys();
-        signInKeys.subscribe(jwtKeys => {
+        return Observable.create((obs) => {
+
+            let oidcUser = new OIDCUser();
+
+            this.getSigningKeys().subscribe(jwtKeys => {
                 __self.jwtKeys = jwtKeys;
 
-                if (!result.error) {
+                if (result.error) {
+                    const err = { code: 500, message: 'There is a problem with the authorization server or the user account.' };
+                    __self.handleError(err);
+                    obs.error(err);
+                } else {
+                    oidcUser.scope = result.scope || '';
+                    oidcUser.session_state = result.session_state || '';
+                    oidcUser.state = result.state || '';
+                    oidcUser.token_type = result.token_type || '';
+                    oidcUser.expires_in = result.expires_in || '';
+                    oidcUser.expires_at = result.expires_at || '';
 
                     // validate state
                     if (this.oidcSecurityValidation.validateStateFromHashCallback(result.state, this.oidcSecurityCommon.retrieve(this.oidcSecurityCommon.storage_auth_state_control))) {
                         if (this.authConfiguration.response_type === 'id_token token') {
                             access_token = result.access_token;
+                            oidcUser.access_token = access_token;
                         }
                         id_token = result.id_token;
+                        oidcUser.id_token = id_token;
 
                         let headerDecoded;
                         decoded_id_token = this.oidcSecurityValidation.getPayloadFromToken(id_token, false);
@@ -180,32 +203,41 @@ export class OidcSecurityService {
                                                         this.successful_validation();
                                                     }
                                                 } else {
+                                                    obs.error( { code: 401, message: 'Login token has expired, try loging in again'} );
                                                     this.oidcSecurityCommon.logWarning('authorizedCallback token expired');
                                                 }
                                             } else {
+                                                obs.error( { code: 401, message: 'Authorization server error: Login failed, try logging in again.'} );
                                                 this.oidcSecurityCommon.logWarning('authorizedCallback incorrect aud');
                                             }
                                         } else {
+                                            obs.error( { code: 401, message: 'Authorization server error: Login failed due to the authorization server not matching the expected server url.'} );
                                             this.oidcSecurityCommon.logWarning('authorizedCallback incorrect iss does not match authWellKnownEndpoints issuer');
                                         }
                                     } else {
+                                        obs.error( { message: 'Authorization server error: Validation due to token timeout, try logging in again.'} );
                                         this.oidcSecurityCommon.logWarning('authorizedCallback Validation, iat rejected id_token was issued too far away from the current time');
                                     }
                                 } else {
+                                    obs.error( { message: 'Authorization server error'} );
                                     this.oidcSecurityCommon.logDebug('authorizedCallback Validation, one of the REQUIRED properties missing from id_token');
                                 }
                             } else {
+                                obs.error( { message: 'Authorization server error'} );
                                 this.oidcSecurityCommon.logWarning('authorizedCallback incorrect nonce');
                             }
                         } else {
+                            obs.error( { message: 'Authorization server error'} );
                             this.oidcSecurityCommon.logDebug('authorizedCallback Signature validation failed id_token');
                         }
                     } else {
+                        obs.error( { message: 'Authorization server error'} );
                         this.oidcSecurityCommon.logWarning('authorizedCallback incorrect state');
                     }
                 }
 
                 if (authResponseIsValid) {
+                    oidcUser.authorizationComplete = true;
                     this.setAuthorizationData(access_token, id_token);
                     // flow id_token token
                     if (this.authConfiguration.response_type === 'id_token token') {
@@ -213,9 +245,14 @@ export class OidcSecurityService {
                             .subscribe(() => {
                                 this.oidcSecurityCommon.logDebug('authorizedCallback id_token token flow');
                                 if (this.oidcSecurityValidation.validate_userdata_sub_id_token(decoded_id_token.sub, this.oidcSecurityUserService.userData.sub)) {
-                                    this.onUserDataLoaded.emit();
+                                    oidcUser.user_data = this.oidcSecurityUserService.userData;
                                     this.oidcSecurityCommon.logDebug(this.oidcSecurityCommon.retrieve(this.oidcSecurityCommon.storage_access_token));
                                     this.oidcSecurityCommon.logDebug(this.oidcSecurityUserService.userData);
+
+                                    this.setUserData(oidcUser);
+                                    obs.next(oidcUser);
+                                    __self.oidcUserShare.next(oidcUser);
+
                                     if (this.authConfiguration.start_checksession) {
                                         this.oidcSecurityCheckSession.init().subscribe(() => {
                                             this.oidcSecurityCheckSession.pollServerSession(result.session_state, this.authConfiguration.client_id);
@@ -229,6 +266,7 @@ export class OidcSecurityService {
                                     this.runTokenValidatation();
 
                                     this.router.navigate([this.authConfiguration.startup_route]);
+                                    obs.complete();
                                 } else { // some went wrong, userdata sub does not match that from id_token
                                     this.oidcSecurityCommon.logWarning('authorizedCallback, User data sub does not match sub in id_token');
                                     this.oidcSecurityCommon.logDebug('authorizedCallback, token(s) validation failed, resetting');
@@ -251,20 +289,23 @@ export class OidcSecurityService {
                         if (this.authConfiguration.silent_renew) {
                             this.oidcSecuritySilentRenew.initRenew();
                         }
-
+                        obs.next(oidcUser);
+                        __self.oidcUserShare.next(oidcUser);
                         this.runTokenValidatation();
                         this.router.navigate([this.authConfiguration.startup_route]);
+                        obs.complete();
                     }
                 } else { // some went wrong
                     this.oidcSecurityCommon.logDebug('authorizedCallback, token(s) validation failed, resetting');
                     this.resetAuthorizationData();
                     this.router.navigate([this.authConfiguration.unauthorized_route]);
+                    obs.error({status: 401, message: 'Login validation failed, not authorized. Try logging in again.'});
                 }
-            }, (err) => { console.error('Error logging in', err); });
-            return signInKeys;
+            }, (err) => { obs.error( { code: 403, message: 'Token key validation failed', error: err }, err); });
+        });
     }
 
-    logoff() {
+    public logoff(): void {
         // /connect/endsession?id_token_hint=...&post_logout_redirect_uri=https://myapp.com
         this.oidcSecurityCommon.logDebug('BEGIN Authorize, no auth data');
 
@@ -327,6 +368,13 @@ export class OidcSecurityService {
         this.oidcSecurityCommon.store(this.oidcSecurityCommon.storage_is_authorized, true);
     }
 
+    private setUserData(oidcUser: OIDCUser) {
+        if (this.oidcSecurityCommon.retrieve(this.oidcSecurityCommon.storage_user_data) !== '') {
+            this.oidcSecurityCommon.store(this.oidcSecurityCommon.storage_user_data, '');
+        }
+        this.oidcSecurityCommon.store(this.oidcSecurityCommon.storage_user_data, oidcUser.toStorageString());
+    }
+
     private createAuthorizeUrl(nonce: string, state: string): string {
 
         let authorizationUrl = this.authWellKnownEndpoints.authorization_endpoint;
@@ -348,17 +396,17 @@ export class OidcSecurityService {
 
     }
 
-    private resetAuthorizationData() {
+    public resetAuthorizationData() {
         this.isAuthorized = false;
         this.oidcSecurityCommon.resetStorageData();
         this.checkSessionChanged = false;
     }
 
-    handleError(error: any) {
+    public handleError(error: any) {
         this.oidcSecurityCommon.logError(error);
-        if (error.status == 403) {
+        if (error.status === 403) {
             this.router.navigate([this.authConfiguration.forbidden_route]);
-        } else if (error.status == 401) {
+        } else if (error.status === 401) {
             this.resetAuthorizationData();
             this.router.navigate([this.authConfiguration.unauthorized_route]);
         }

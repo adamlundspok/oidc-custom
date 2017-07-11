@@ -10,6 +10,7 @@ import { UnauthorizedComponent } from './unauthorized/unauthorized.component';
 import { AuthDebugComponent } from './views/auth-debug.component';
 
 import { LoadingComponent } from './views/loading.component';
+import { OIDCUser } from "app/auth/oidc.user.model";
 
 @Component({
   selector: 'app-root',
@@ -30,13 +31,19 @@ export class AppComponent implements OnInit {
         this.loader.show();
         this.loader.setMessage('Logging you in now');
 
-        console.log('Validating user from id_token, my url is', this.router.url);
-        let l = this.loginService.securityService.authorizedCallback();
-        l.subscribe((res) => {
-          console.log('Authorize callback completed', res);
-          this.loader.hide();
+        console.log('APP INIT: Validating user from id_token, my url is', this.router.url);
+        this.loginService.securityService.authorizedCallback().subscribe((res) => {
+          this.loader.setMessage('Login successful');
+          console.log('APP INIT: Authorize callback with data:', res);
         }, (error) => {
-          console.error('Authorize failed');
+          this.loader.setMessage('Error trying to log you in: ' + error.toString());
+          console.error('APP INIT: Authorize failed');
+          // TODO ADD REDIRECT TO UNAUTHORIZED
+          
+        }, () => {
+          this.loader.setMessage('Welcome');
+          console.log('APP INIT: AUTH COMPLETE:');
+          this.loader.hide();
         });
 
 
@@ -66,6 +73,12 @@ export class AppComponent implements OnInit {
   getSecuritySettings() {
     const token = this.loginService.securityService.getToken();
     const user = this.loginService.securityService.getUserData();
+    this.loginService.securityService.oidcUserShare.subscribe(( userd: OIDCUser ) => {
+      if ( userd ) {
+        console.log('********* OIDC USER DATA ********');
+        console.log(userd);
+      }
+    });
     console.log('********* TOKEN ********');
     console.log(token);
     console.log('********* USER ********');

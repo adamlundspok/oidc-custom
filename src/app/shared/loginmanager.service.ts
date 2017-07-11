@@ -7,32 +7,47 @@ import {BehaviorSubject} from 'rxjs/BehaviorSubject';
 
 import { OidcSecurityService } from '../auth/services/oidc.security.service';
 import { OidcSecurityCommon } from '../auth/services/oidc.security.common';
+import { OidcSecurityUserService } from '../auth/services/oidc.security.user-service';
 
-import { UserAuth } from './userauth.model';
+import { OIDCUser } from '../auth/oidc.user.model';
 
 @Injectable()
 export class LoginService implements Injectable, CanActivate {
-    public user_auth: UserAuth;
-    public user_data: any;
     public oidcSession: OidcSecurityCommon;
-    private userAuthLoaded: any;
-
-    private authenticatedUser: BehaviorSubject<UserAuth> = new BehaviorSubject(new UserAuth);
+    private oidcUser: OIDCUser;
 
     constructor(public securityService: OidcSecurityService, private router: Router) {
 
         this.oidcSession = securityService.oidcSecurityCommon;
-        this.userAuthLoaded = this.securityService.onUserDataLoaded.subscribe(evt => {
-            console.log('LOGINMGR USER DATA LOADED');
-            this.user_auth = new UserAuth();
-            if (this.securityService.getUserData()) {
-                this.user_data = this.securityService.getUserData();
-                this.user_auth.name = this.user_data.name;
-                this.authenticatedUser.next(this.user_auth);
-                console.log('STORING USER DATA:', JSON.stringify(this.user_data));
-                this.oidcSession.store(this.oidcSession.storage_user_data, this.user_data);
-            }
-        });
+        // this.userAuthLoaded = this.securityService.onUserDataLoaded.subscribe(evt => {
+        //     console.log('LOGINMGR USER DATA LOADED');
+
+        //     this.securityService.oidcSecurityUserService.getIdentityUserData()
+        //         .map((res) => {
+        //             console.log('Identity user data from asynch', res);
+        //     });
+
+        //     if (this.securityService.getUserData()) {
+        //         this.user_data = this.securityService.getUserData();
+        //         console.log('STORING USER DATA:', JSON.stringify(this.user_data));
+        //         this.oidcSession.store(this.oidcSession.storage_user_data, this.user_data);
+        //     }
+
+        // });
+
+        this.securityService.oidcUserShare
+            .subscribe(
+                (user: OIDCUser) => {
+                    this.oidcUser = user;
+                    console.log('LOGINMGR USER DATA LOADED');
+                    console.log(user);
+                },
+                (error) => {
+
+                }, () => {
+
+                } );
+
     }
 
     public canActivate(thing: any): boolean {
@@ -50,6 +65,18 @@ export class LoginService implements Injectable, CanActivate {
         return false;
     }
 
+    public failedLoginAttempt(error: any): void {
+        this.securityService.oidcSecurityCommon.logError(error);
+        if (error.status === 403) {
+            this.router.navigate([this.securityService.authConfiguration.forbidden_route]);
+        } else if (error.status === 401) {
+            this.securityService.resetAuthorizationData();
+            this.router.navigate([this.securityService.authConfiguration.unauthorized_route]);
+        } else {
+            this.router.navigate([this.securityService.authConfiguration.unauthorized_route]);
+        }
+    }
+
 
     public printSessionStatetoConsole() {
         if (!this.oidcSession.storage) {
@@ -65,31 +92,13 @@ export class LoginService implements Injectable, CanActivate {
             console.log('No user data available in storage');
         }
 
-        console.log('User data in local variable:', this.user_data);
-        for (const key in this.user_data) {
+        console.log('User data in local variable:', this.oidcUser);
+        for (const key in this.oidcUser) {
             if (key) {
-                console.log('\t' + key + ' : ' + this.user_data[key]);
+                console.log('\t' + key + ' : ' + this.oidcUser[key]);
             }
         }
 
-
-    }
-
-    public storeAuthUser(userData: any): void {
-        this.oidcSession.store(this.oidcSession.storage_user_data, userData);
-    }
-
-    public getAuthUser(): UserAuth {
-        if (this.oidcSession.retrieve(this.oidcSession.storage_user_data)) {
-            let ud = new UserAuth();
-            ud.name = this.oidcSession.retrieve(this.oidcSession.storage_user_data).name;
-            return ud;
-        }
-        return null;
-    }
-
-    public getAuthenticatedUser(): Observable<UserAuth> {
-        return this.authenticatedUser.share();
     }
 }
 

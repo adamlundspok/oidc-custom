@@ -1,6 +1,8 @@
-# Idtest
+# Custom OIDC Library for Angular 
 
 This project was generated with [Angular CLI](https://github.com/angular/angular-cli) version 1.0.3.
+
+Based on code from: https://github.com/damienbod/angular-auth-oidc-client
 
 ## Development server
 

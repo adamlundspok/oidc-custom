@@ -20,12 +20,7 @@ export class AuthDebugComponent implements OnInit {
     constructor(private loginmanager: LoginService) {}
 
     public ngOnInit() {
-        this.userLoadedListener = this.loginmanager.getAuthenticatedUser();
 
-        this.userLoadedListener.subscribe(authUser => {
-            this.user_data.name = this.loginmanager.getAuthUser().name;
-            console.log('AUTHDEBUG USER LOADED', this.user_data.name);
-        });
         // this.userLoadedListener = this.loginmanager.securityService.onUserDataLoaded.subscribe(evt => {
         //     console.log('USER DATA LOADED');
         //     console.log(evt);

@@ -35,7 +35,7 @@ export class OidcSecurityUserService {
             .map(data => this.userData = data);
     }
 
-    private getIdentityUserData = (): Observable<any> => {
+    public getIdentityUserData = (): Observable<any> => {
 
         let headers = new Headers();
         headers.append('Content-Type', 'application/json');
